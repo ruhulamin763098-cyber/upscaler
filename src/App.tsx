@@ -34,6 +34,7 @@ import { UpscalerConfig, ImageState, GeminiRecommendation, RamMetrics, UpscalerA
 import { processImageTiled, calculateRamMetrics } from './utils/upscaler';
 import RamMonitor from './components/RamMonitor';
 import ImageSlider from './components/ImageSlider';
+import { AdBanner } from './components/AdBanner';
 
 const DEFAULT_CONFIG: UpscalerConfig = {
   algorithm: 'lanczos',
@@ -633,6 +634,9 @@ export default function App() {
 
       {/* Main Container - High Density layout */}
       <div className="w-full max-w-7xl mx-auto px-6 py-6 flex-1 flex flex-col gap-6 relative z-10">
+        {/* Ad Banner */}
+        <AdBanner />
+
         {/* Global Error Message */}
         {errorMessage && (
           <div className="bg-red-500/10 border border-red-500/20 p-3 rounded-lg text-red-300 text-xs flex items-start gap-2 animate-in fade-in slide-in-from-top-2">
