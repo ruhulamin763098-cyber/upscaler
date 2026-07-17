@@ -1,0 +1,6 @@
+{
+  "name": "High-Resolution Image Upscaler",
+  "description": "An efficient image upscaling and enhancement application designed to run smoothly on low-memory (4GB RAM) devices using optimized tiled-canvas processing.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
