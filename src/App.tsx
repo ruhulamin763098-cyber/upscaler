@@ -25,6 +25,10 @@ import {
   Layers,
   Plus,
   CheckCircle,
+  Key,
+  Eye,
+  EyeOff,
+  Server,
 } from 'lucide-react';
 import { UpscalerConfig, ImageState, GeminiRecommendation, RamMetrics, UpscalerAlgorithm, QueueItem } from './types';
 import { processImageTiled, calculateRamMetrics } from './utils/upscaler';
@@ -76,6 +80,15 @@ export default function App() {
   const [downloadQuality, setDownloadQuality] = useState<number>(90);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [showAdvanced, setShowAdvanced] = useState<boolean>(false);
+
+  // Gemini API Key management states
+  const [showApiKeyPanel, setShowApiKeyPanel] = useState<boolean>(false);
+  const [customApiKey, setCustomApiKey] = useState<string>(() => {
+    return localStorage.getItem('GEMINI_API_KEY') || '';
+  });
+  const [showKeyText, setShowKeyText] = useState<boolean>(false);
+  const [isUpdatingKeyOnServer, setIsUpdatingKeyOnServer] = useState<boolean>(false);
+  const [keyFeedback, setKeyFeedback] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const cancelRef = useRef<boolean>(false);
@@ -457,6 +470,40 @@ export default function App() {
     });
   };
 
+  const handleSaveKeyLocal = () => {
+    localStorage.setItem('GEMINI_API_KEY', customApiKey);
+    setKeyFeedback({ text: 'Saved key locally in browser!', type: 'success' });
+    setTimeout(() => setKeyFeedback(null), 3000);
+  };
+
+  const handleSaveKeyServer = async () => {
+    if (!customApiKey) {
+      setKeyFeedback({ text: 'Please enter an API key first.', type: 'error' });
+      return;
+    }
+    setIsUpdatingKeyOnServer(true);
+    setKeyFeedback(null);
+    try {
+      const response = await fetch('/api/gemini/update-key', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ apiKey: customApiKey }),
+      });
+      const data = await response.json();
+      if (response.ok && data.success) {
+        setKeyFeedback({ text: 'Updated key successfully on the server!', type: 'success' });
+        localStorage.setItem('GEMINI_API_KEY', customApiKey);
+      } else {
+        throw new Error(data.error || 'Failed to update key.');
+      }
+    } catch (err: any) {
+      setKeyFeedback({ text: err.message || 'Server error occurred.', type: 'error' });
+    } finally {
+      setIsUpdatingKeyOnServer(false);
+      setTimeout(() => setKeyFeedback(null), 4000);
+    }
+  };
+
   // Call the server-side Gemini API to analyze the image
   const handleGeminiAnalyze = async () => {
     if (!imageState.originalUrl) return;
@@ -475,7 +522,11 @@ export default function App() {
       const response = await fetch('/api/gemini/analyze', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ imageBase64: base64, mimeType }),
+        body: JSON.stringify({
+          imageBase64: base64,
+          mimeType,
+          customApiKey: customApiKey || undefined,
+        }),
       });
 
       if (!response.ok) {
@@ -761,6 +812,69 @@ export default function App() {
                 )}
               </div>
             )}
+
+            {/* Gemini API Key Configuration Panel */}
+            <div className="border-t border-slate-800/80 pt-3 mt-auto">
+              <button
+                type="button"
+                onClick={() => setShowApiKeyPanel(!showApiKeyPanel)}
+                className="w-full flex items-center justify-between text-[10px] uppercase font-bold text-slate-400 hover:text-slate-200 tracking-wider transition-colors cursor-pointer"
+              >
+                <div className="flex items-center gap-1.5">
+                  <Key className="w-3.5 h-3.5 text-indigo-400" />
+                  <span>Gemini API Key Control</span>
+                </div>
+                <span className="text-[9px] font-mono">{showApiKeyPanel ? '▲' : '▼'}</span>
+              </button>
+
+              {showApiKeyPanel && (
+                <div className="mt-2 flex flex-col gap-2 bg-slate-950/40 p-2.5 rounded-lg border border-slate-850">
+                  <div className="flex flex-col gap-1">
+                    <span className="text-[9px] text-slate-500 font-medium">Configure Gemini API Key</span>
+                    <div className="relative">
+                      <input
+                        type={showKeyText ? "text" : "password"}
+                        value={customApiKey}
+                        onChange={(e) => setCustomApiKey(e.target.value)}
+                        placeholder="Defaulting to server key..."
+                        className="w-full pl-2 pr-7 py-1 text-[10px] font-mono bg-slate-900 border border-slate-800 rounded text-slate-300 focus:outline-none focus:border-indigo-500 placeholder-slate-600"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowKeyText(!showKeyText)}
+                        className="absolute right-1.5 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300 p-0.5"
+                      >
+                        {showKeyText ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-1.5">
+                    <button
+                      type="button"
+                      onClick={handleSaveKeyLocal}
+                      className="py-1 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded text-[9px] font-bold transition-all cursor-pointer"
+                    >
+                      Use in Browser
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleSaveKeyServer}
+                      disabled={isUpdatingKeyOnServer}
+                      className="py-1 bg-indigo-600 hover:bg-indigo-500 text-white disabled:opacity-50 rounded text-[9px] font-bold transition-all flex items-center justify-center gap-1 cursor-pointer"
+                    >
+                      {isUpdatingKeyOnServer ? <Loader2 className="w-2.5 h-2.5 animate-spin" /> : <Server className="w-2.5 h-2.5" />}
+                      Save to Server
+                    </button>
+                  </div>
+                  {keyFeedback && (
+                    <span className={`text-[8.5px] font-mono mt-0.5 leading-tight block ${keyFeedback.type === 'success' ? 'text-emerald-400' : 'text-red-400'}`}>
+                      {keyFeedback.text}
+                    </span>
+                  )}
+                </div>
+              )}
+            </div>
           </aside>
 
           {/* COLUMN 2: PARAMETER CONFIGURATION (Lg: col-span-4) */}

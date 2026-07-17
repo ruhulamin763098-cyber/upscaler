@@ -6,6 +6,7 @@
 import express from 'express';
 import path from 'path';
 import dotenv from 'dotenv';
+import fs from 'fs';
 import { GoogleGenAI, Type } from '@google/genai';
 import { createServer as createViteServer } from 'vite';
 
@@ -24,7 +25,17 @@ async function startServer() {
 
   // Initialize Gemini client (Lazy-loaded safely)
   let aiClient: GoogleGenAI | null = null;
-  function getGeminiClient() {
+  function getGeminiClient(customApiKey?: string) {
+    if (customApiKey) {
+      return new GoogleGenAI({
+        apiKey: customApiKey,
+        httpOptions: {
+          headers: {
+            'User-Agent': 'aistudio-build',
+          },
+        },
+      });
+    }
     if (!aiClient) {
       const apiKey = process.env.GEMINI_API_KEY;
       if (!apiKey) {
@@ -42,15 +53,55 @@ async function startServer() {
     return aiClient;
   }
 
+  // --- API Endpoint: Gemini API Key Update/Change ---
+  app.post('/api/gemini/update-key', async (req, res) => {
+    try {
+      const { apiKey } = req.body;
+      if (!apiKey) {
+        return res.status(400).json({ error: 'Missing apiKey' });
+      }
+
+      const envPath = path.join(process.cwd(), '.env');
+      let envContent = '';
+      if (fs.existsSync(envPath)) {
+        envContent = fs.readFileSync(envPath, 'utf8');
+      }
+
+      if (envContent.includes('GEMINI_API_KEY=')) {
+        envContent = envContent.replace(/GEMINI_API_KEY=.*/, `GEMINI_API_KEY="${apiKey}"`);
+      } else {
+        envContent += `\nGEMINI_API_KEY="${apiKey}"\n`;
+      }
+      fs.writeFileSync(envPath, envContent, 'utf8');
+
+      // Update in-memory process environment variable
+      process.env.GEMINI_API_KEY = apiKey;
+      // Re-initialize standard cached client
+      aiClient = new GoogleGenAI({
+        apiKey,
+        httpOptions: {
+          headers: {
+            'User-Agent': 'aistudio-build',
+          },
+        },
+      });
+
+      res.json({ success: true, message: 'API key updated successfully on the server.' });
+    } catch (err: any) {
+      console.error('Failed to update API key:', err);
+      res.status(500).json({ error: 'Failed to update API key on server.', details: err.message || err });
+    }
+  });
+
   // --- API Endpoint: Gemini Smart Image Analysis ---
   app.post('/api/gemini/analyze', async (req, res) => {
     try {
-      const { imageBase64, mimeType } = req.body;
+      const { imageBase64, mimeType, customApiKey } = req.body;
       if (!imageBase64) {
         return res.status(400).json({ error: 'Missing imageBase64 in request body.' });
       }
 
-      const client = getGeminiClient();
+      const client = getGeminiClient(customApiKey);
 
       const imagePart = {
         inlineData: {
