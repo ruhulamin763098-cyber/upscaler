@@ -319,6 +319,7 @@ export async function processImageTiled(
   const totalTiles = cols * rows;
 
   let currentTile = 0;
+  let lastYieldTime = performance.now();
 
   // Extra margin (padding) to avoid edge seams between tiles during bilinear/bicubic/lanczos filtering
   const padding = config.algorithm === 'lanczos' ? 3 : (config.algorithm === 'bicubic' ? 2 : (config.algorithm === 'bilinear' ? 1 : 0));
@@ -419,9 +420,13 @@ export async function processImageTiled(
       const progressPercent = Math.round((currentTile / totalTiles) * 100);
       onProgress(progressPercent, currentTile, totalTiles);
 
-      // Yield thread back to browser to process frames, rendering UI responsive,
-      // and allowing the garbage collector (GC) to immediately deallocate temporary buffers!
-      await new Promise((resolve) => setTimeout(resolve, 5));
+      // Throttle thread yielding to once every 35ms (25-30fps window) instead of every tile
+      // This completely removes setTimeout overhead for fast processing while keeping UI perfectly responsive!
+      const now = performance.now();
+      if (now - lastYieldTime > 35) {
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        lastYieldTime = performance.now();
+      }
     }
   }
 

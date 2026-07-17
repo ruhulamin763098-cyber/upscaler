@@ -166,17 +166,13 @@ export function applyDenoise(
       const isGradient = localRange < debandThreshold;
 
       for (let dy = -radius; dy <= radius; dy++) {
-        const ny = y + dy;
-        if (ny < 0 || ny >= height) {
-          weightIdx += (2 * radius + 1);
-          continue;
-        }
+        const ny = Math.max(0, Math.min(height - 1, y + dy));
         const nyWidth = ny * width;
+        const spatialYOffset = (dy + radius) * (2 * radius + 1);
 
         for (let dx = -radius; dx <= radius; dx++) {
-          const sWeight = spatialWeights[weightIdx++];
-          const nx = x + dx;
-          if (nx < 0 || nx >= width) continue;
+          const nx = Math.max(0, Math.min(width - 1, x + dx));
+          const sWeight = spatialWeights[spatialYOffset + (dx + radius)];
 
           const nIdx = (nyWidth + nx) * 4;
           const nr = src[nIdx];
@@ -314,6 +310,14 @@ export function applyCameraRawSharpen(
   // Camera Raw Strength
   const strength = (amount / 100) * 1.6;
 
+  // Precompute flat luminance map to completely eliminate 5x redundant conversions per pixel
+  const totalPixels = width * height;
+  const lum = new Uint8Array(totalPixels);
+  for (let i = 0; i < totalPixels; i++) {
+    const idx = i * 4;
+    lum[i] = Math.min(255, Math.max(0, Math.round(0.299 * src[idx] + 0.587 * src[idx + 1] + 0.114 * src[idx + 2])));
+  }
+
   for (let y = 0; y < height; y++) {
     const yWidth = y * width;
     const yPrevWidth = (y > 0 ? y - 1 : y) * width;
@@ -329,15 +333,11 @@ export function applyCameraRawSharpen(
       const idxLeft = (yWidth + xPrev) * 4;
       const idxRight = (yWidth + xNext) * 4;
 
-      const rC = src[idx];
-      const gC = src[idx + 1];
-      const bC = src[idx + 2];
-      const lumC = 0.299 * rC + 0.587 * gC + 0.114 * bC;
-
-      const lumT = 0.299 * src[idxTop] + 0.587 * src[idxTop + 1] + 0.114 * src[idxTop + 2];
-      const lumB = 0.299 * src[idxBottom] + 0.587 * src[idxBottom + 1] + 0.114 * src[idxBottom + 2];
-      const lumL = 0.299 * src[idxLeft] + 0.587 * src[idxLeft + 1] + 0.114 * src[idxLeft + 2];
-      const lumR = 0.299 * src[idxRight] + 0.587 * src[idxRight + 1] + 0.114 * src[idxRight + 2];
+      const lumC = lum[yWidth + x];
+      const lumT = lum[yPrevWidth + x];
+      const lumB = lum[yNextWidth + x];
+      const lumL = lum[yWidth + xPrev];
+      const lumR = lum[yWidth + xNext];
 
       // Shadow masking to protect JPEG noise in dark areas
       let shadowMask = 1.0;
@@ -448,11 +448,12 @@ export function applyWaveAntiDistortion(
       const diffR = rC - rMean;
       const diffG = gC - gMean;
       const diffB = bC - bMean;
-      const variance = Math.sqrt((diffR * diffR + diffG * diffG + diffB * diffB) / 3);
+      const varianceSq = (diffR * diffR + diffG * diffG + diffB * diffB) / 3;
 
-      // Target soft textures / waves (sweet spot of variance 1.5 to 25)
+      // Target soft textures / waves (sweet spot of variance 1.5 to 25, varianceSq 2.25 to 625)
       let waveConfidence = 0.0;
-      if (variance >= 1.5 && variance <= 25.0) {
+      if (varianceSq >= 2.25 && varianceSq <= 625.0) {
+        const variance = Math.sqrt(varianceSq);
         if (variance < 6.0) {
           waveConfidence = (variance - 1.5) / 4.5;
         } else if (variance > 16.0) {

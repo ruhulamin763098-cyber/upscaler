@@ -43,7 +43,7 @@ const DEFAULT_CONFIG: UpscalerConfig = {
   contrast: 100,
   saturation: 100,
   lowMemoryMode: true,
-  tileSize: 256,
+  tileSize: 512,
 };
 
 export default function App() {
